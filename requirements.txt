@@ -8,3 +8,4 @@ janome
 lexicalrichness
 openai
 torch
+shap
