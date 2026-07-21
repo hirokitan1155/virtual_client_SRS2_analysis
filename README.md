@@ -25,6 +25,10 @@ The analysis pipeline includes:
 4. Statistical correlation analysis
 5. Machine learning prediction with cross-validation
 
+## Data Availability
+
+The psychotherapy dialogue dataset used in this study is not publicly available due to ethical and privacy restrictions.
+
 ## Requirements
 
 Python 3.11+
