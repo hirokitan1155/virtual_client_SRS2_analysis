@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 from scipy.stats import spearmanr
 import time
+import shap
 from sentence_transformers import SentenceTransformer
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import Ridge
@@ -16,6 +17,7 @@ from sklearn.model_selection import LeaveOneOut, cross_val_predict
 from sklearn.metrics import mean_absolute_error, r2_score
 from scipy.stats import spearmanr
 import torch
+from xgboost import XGBRegressor
 from lexicalrichness import LexicalRichness
 from openai import OpenAI
 import json
@@ -50,6 +52,15 @@ def calc_corr(name, x):
     print("rho =", rho)
     print("p   =", p)
 
+
+AGENDA_CACHE_FILE = "agenda_results.json"
+
+
+if Path(AGENDA_CACHE_FILE).exists():
+    with open(AGENDA_CACHE_FILE, "r", encoding="utf-8") as f:
+        agenda_cache = json.load(f)
+else:
+    agenda_cache = {}
 
 # ==========================
 # GPT Agenda Extraction
@@ -103,12 +114,23 @@ JSON形式のみで返してください。
     )
 
     return result
+
+
+
+def save_agenda_cache():
+    with open(AGENDA_CACHE_FILE, "w", encoding="utf-8") as f:
+        json.dump(
+            agenda_cache,
+            f,
+            ensure_ascii=False,
+            indent=2
+        )
+
+# ==========================
+# NLP Feature Extraction
+# ==========================
+
 start = time.perf_counter()
-
-
-# ==========================
-# Text Feature Extraction
-# ==========================
 
 print("Current working directory:", os.getcwd())
 
@@ -122,7 +144,7 @@ print("Correlation of K6 and SRS:")
 print("rho =", rho)
 print("p =", p)
 
-plt.scatter(demo_data["K6_total"],demo_data["SRS2_total"], s=50, alpha=0.7)
+plt.scatter(demo_data["K6_total"],demo_data["SRS2_total"], s=50, color="black", alpha=0.7)
 
 plt.xlabel("K6 Total")
 plt.ylabel("SRS-2 Total")
@@ -200,9 +222,9 @@ for file_path in sorted(dir_path.glob(extension), key=lambda p: int(p.stem)):
         patient_turn_count = 0
         doctor_turn_count = 0
         
-        file_id = int(file_path.stem)
+        file_id = str(file_path.stem)
 
-        if file_id in opposite_files:
+        if int(file_id) in opposite_files:
             doctor_id = 1
         else:
             doctor_id = 0
@@ -375,7 +397,21 @@ for file_path in sorted(dir_path.glob(extension), key=lambda p: int(p.stem)):
             #Agenda
             
             patient_text_agenda = " ".join(Patient_sentences)
-            agenda = extract_agenda(patient_text_agenda)
+
+            #file_id = str(Path(file_path).stem)
+
+            if file_id in agenda_cache:
+                print(f"Loading cached agenda: {file_id}")
+                agenda = agenda_cache[file_id]
+
+            else:
+                print(f"Calling OpenAI API: {file_id}")
+
+                agenda = extract_agenda(patient_text_agenda)
+
+                agenda_cache[file_id] = agenda
+
+                save_agenda_cache()
 
             Agenda_social.append(
                 agenda["social_relationship"]
@@ -425,7 +461,7 @@ with open("out_spe1_words_all.txt", "w", encoding="utf-8") as f:
 
 print("# of file count:", file_count)
 
-# results display
+
 calc_corr("Jaccard", Jaccard_array)
 calc_corr("Cosine", Cosine_array)
 calc_corr("Bert", Bert_array)
@@ -450,7 +486,6 @@ calc_corr("Agenda_depression", Agenda_depression)
 # ==========================
 # Machine Learning
 # ==========================
-
 
 y = demo_data["SRS2_total"]
 
@@ -505,25 +540,48 @@ lr = LinearRegression()
 # Ridge regression
 ridge = Ridge(alpha=0.1) #alpha value could be changed
 
+# XGBoost
+xgb = XGBRegressor(
+    n_estimators=300,
+    learning_rate=0.05,
+    max_depth=3,
+    random_state=42,
+    objective="reg:squarederror"
+)
+
+
 # cross validation
 
 loo = LeaveOneOut()
 
 pred = cross_val_predict(
-    rf,
+    xgb, # to be changed
     X, # to be changed
     y,
     cv=loo
 )
 
-rho, p = spearmanr(y, pred)
+# ---- Train final model for interpretation ----
+xgb.fit(X, y)
 
-print("##Prediction##")
-print("Spearman rho =", rho)
-print("p =", p)
+# SHAP
+explainer = shap.TreeExplainer(xgb)
 
-print("MAE =", mean_absolute_error(y, pred))
-print("R2 =", r2_score(y, pred))
+shap_values = explainer.shap_values(X)
+
+shap.summary_plot(
+    shap_values,
+    X,
+    show=False
+)
+
+plt.tight_layout()
+plt.savefig(
+    "shap_summary_plot.pdf",
+    bbox_inches="tight"
+)
+
+plt.close()
 
 # importance
 
@@ -536,19 +594,37 @@ importance = pd.Series(
 
 print(importance.sort_values(ascending=False))
 
+
+rho, p = spearmanr(y, pred)
+
+print("##Prediction##")
+print("Spearman rho =", rho)
+print("p =", p)
+
+print("MAE =", mean_absolute_error(y, pred))
+print("R2 =", r2_score(y, pred))
+
+
+
+
 # ==========================
 # Visualization
 # ==========================
 
 plt.figure(figsize=(5,5))
-plt.scatter(y, pred)
+plt.scatter(y, pred,s=50, color="black", alpha=0.7)
 
 plt.xlabel("True SRS")
 plt.ylabel("Predicted SRS")
 
+plt.xlim(0, 150)
+plt.ylim(0, 150)
+
 plt.tight_layout()
 plt.savefig("SRS2_prediction_scatter.pdf", bbox_inches="tight")
 #plt.show()
+
+
 
 # end
 
