@@ -110,6 +110,57 @@ for name, model in models.items():
     print("MAE =", mae)
     print("R2 =", r2)
 
+    # ==========================
+    # Observed vs Predicted plot
+    # ==========================
+
+    if name == "Elastic Net":
+
+        plt.figure(figsize=(6, 6))
+
+        plt.scatter(
+            y,
+            pred,
+            s=50,
+            alpha=0.7
+        )
+
+        min_val = min(y.min(), pred.min())
+        max_val = max(y.max(), pred.max())
+
+        plt.plot(
+            [min_val, max_val],
+            [min_val, max_val],
+            linestyle="--"
+        )
+
+        plt.xlabel("Observed K6 score")
+        plt.ylabel("Predicted K6 score")
+
+        plt.title(
+            "Elastic Net: Observed vs Predicted K6 Scores"
+        )
+
+        plt.text(
+            0.05,
+            0.95,
+            f"Spearman ρ = {rho:.3f}\n"
+            f"p = {p:.3f}\n"
+            f"MAE = {mae:.2f}\n"
+            f"R² = {r2:.3f}",
+            transform=plt.gca().transAxes,
+            verticalalignment="top"
+        )
+
+        plt.tight_layout()
+
+        plt.savefig(
+            "elastic_net_K6_observed_vs_predicted.pdf",
+            bbox_inches="tight"
+        )
+
+        plt.close()
+
     results.append({
         "Model": name,
         "Spearman_rho": rho,
@@ -191,6 +242,115 @@ coef_summary.to_csv(
     encoding="utf-8-sig"
 )
 
+# ==========================
+# Elastic Net Coefficient Plot
+# ==========================
+
+# Store coefficients from each LOOCV fold
+loo = LeaveOneOut()
+
+coefficient_list = []
+
+for train_idx, test_idx in loo.split(X):
+
+    X_train = X.iloc[train_idx]
+    y_train = y.iloc[train_idx]
+
+    model = Pipeline([
+        ("scaler", StandardScaler()),
+        ("elastic", ElasticNet(
+            alpha=0.1,
+            l1_ratio=0.5,
+            max_iter=10000,
+            random_state=42
+        ))
+    ])
+
+    model.fit(X_train, y_train)
+
+    coefficients = model.named_steps["elastic"].coef_
+
+    coefficient_list.append(coefficients)
+
+
+# Convert to DataFrame
+coef_df = pd.DataFrame(
+    coefficient_list,
+    columns=X.columns
+)
+
+
+# ==========================
+# Calculate coefficient statistics
+# ==========================
+
+coef_summary = pd.DataFrame({
+    "Feature": X.columns,
+    "Mean_Weight": coef_df.mean(),
+    "SD": coef_df.std(ddof=1),
+    "Mean_Abs_Weight": coef_df.abs().mean(),
+    "Nonzero_Count": (coef_df != 0).sum(),
+    "Nonzero_Ratio": (coef_df != 0).mean()
+})
+
+# Sort by absolute coefficient
+coef_summary = coef_summary.sort_values(
+    "Mean_Abs_Weight",
+    ascending=True
+)
+
+
+print("\n===== Elastic Net Coefficients =====")
+print(coef_summary)
+
+
+# ==========================
+# Plot
+# ==========================
+
+plt.figure(figsize=(8, 9))
+
+y_pos = np.arange(len(coef_summary))
+
+plt.errorbar(
+    coef_summary["Mean_Weight"],
+    y_pos,
+    xerr=coef_summary["SD"],
+    fmt="o",
+    capsize=3
+)
+
+# Zero reference line
+plt.axvline(
+    0,
+    linestyle="--",
+    linewidth=1
+)
+
+plt.yticks(
+    y_pos,
+    coef_summary["Feature"]
+)
+
+plt.xlabel(
+    "Standardized Elastic Net coefficient"
+)
+
+plt.ylabel("Feature")
+
+plt.title(
+    "Elastic Net coefficients for K6 prediction"
+)
+
+plt.tight_layout()
+
+plt.savefig(
+    "elastic_net_K6_coefficients.pdf",
+    bbox_inches="tight"
+)
+
+plt.close()
+
 
 # ==========================
 # Fit final Elastic Net
@@ -247,3 +407,132 @@ results_df.to_csv(
     encoding="utf-8-sig"
 )
 
+
+
+# ==========================
+# Feature Set Comparison
+# ==========================
+
+print("\n====================")
+print("Feature Set Comparison")
+print("====================")
+
+# --------------------------
+# Define feature sets
+# --------------------------
+
+agenda_features = [
+    "Agenda_social",
+    "Agenda_work",
+    "Agenda_future",
+    "Agenda_self",
+    "Agenda_family",
+    "Agenda_anxiety",
+    "Agenda_depression"
+]
+
+nlp_features = [
+    "Jaccard",
+    "Cosine",
+    "Bert",
+    "Bert_turn",
+    "Bert_turn_max",
+    "Bert_turn_min",
+    "Bert_turn_std",
+    "Word_count",
+    "Word_count_doc",
+    "Word_ratio",
+    "MTLD_patient",
+    "MTLD_doctor",
+    "Mean_words_per_turn"
+]
+
+all_features = nlp_features + agenda_features
+
+feature_sets = {
+    "Agenda only": agenda_features,
+    "NLP only": nlp_features,
+    "NLP + Agenda": all_features
+}
+
+
+# --------------------------
+# Elastic Net model
+# --------------------------
+
+feature_set_results = []
+
+loo = LeaveOneOut()
+
+for set_name, features in feature_sets.items():
+
+    print("\n====================")
+    print(set_name)
+    print("====================")
+
+    X_subset = X[features]
+
+    model = Pipeline([
+        ("scaler", StandardScaler()),
+        ("elastic", ElasticNet(
+            alpha=0.1,
+            l1_ratio=0.5,
+            max_iter=10000,
+            random_state=42
+        ))
+    ])
+
+    # LOOCV prediction
+    pred = cross_val_predict(
+        model,
+        X_subset,
+        y,
+        cv=loo
+    )
+
+    # Statistics
+    rho, p = spearmanr(
+        y,
+        pred
+    )
+
+    mae = mean_absolute_error(
+        y,
+        pred
+    )
+
+    r2 = r2_score(
+        y,
+        pred
+    )
+
+    print("Spearman rho =", rho)
+    print("p =", p)
+    print("MAE =", mae)
+    print("R2 =", r2)
+
+    feature_set_results.append({
+        "Feature_Set": set_name,
+        "Spearman_rho": rho,
+        "p": p,
+        "MAE": mae,
+        "R2": r2
+    })
+
+
+# ==========================
+# Save feature set results
+# ==========================
+
+feature_set_results_df = pd.DataFrame(
+    feature_set_results
+)
+
+print("\n===== Feature Set Comparison =====")
+print(feature_set_results_df)
+
+feature_set_results_df.to_csv(
+    "feature_set_prediction_results.csv",
+    index=False,
+    encoding="utf-8-sig"
+)
