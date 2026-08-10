@@ -137,15 +137,15 @@ print("Current working directory:", os.getcwd())
 demo_data = pd.read_csv("demo_2.csv") # should be removed 2
 
 print(demo_data)
-rho, p = spearmanr(demo_data["K6_total"],demo_data["SRS2_total"])
+rho, p = spearmanr(demo_data["SRS2_total"],demo_data["K6_total"])
 print("Correlation of K6 and SRS:")
 print("rho =", rho)
 print("p =", p)
 
-plt.scatter(demo_data["K6_total"],demo_data["SRS2_total"], s=50, color="black", alpha=0.7)
+plt.scatter(demo_data["SRS2_total"],demo_data["K6_total"], s=50, alpha=0.7)
 
-plt.xlabel("K6 Total")
-plt.ylabel("SRS-2 Total")
+plt.xlabel("SRS-2 Total")
+plt.ylabel("K6 Total")
 
 plt.tight_layout()
 
