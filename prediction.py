@@ -137,10 +137,6 @@ for name, model in models.items():
         plt.xlabel("Observed K6 score")
         plt.ylabel("Predicted K6 score")
 
-        plt.title(
-            "Elastic Net: Observed vs Predicted K6 Scores"
-        )
-
         plt.text(
             0.05,
             0.95,
