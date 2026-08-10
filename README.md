@@ -1,4 +1,4 @@
-# Virtual Client SRS-2 Analysis
+# Virtual Client SRS-2 and K6 Analysis
 
 This repository contains the analysis code for investigating the relationship between psychotherapy dialogue features and Social Responsiveness Scale-2 (SRS-2) scores using natural language processing (NLP) and machine learning approaches.
 
