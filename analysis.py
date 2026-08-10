@@ -1,26 +1,24 @@
 import os
-import pandas as pd
-from janome.tokenizer import Tokenizer
-from collections import Counter
-import matplotlib.pyplot as plt
-from pathlib import Path
-import numpy as np
-from scipy.stats import spearmanr
+import json
 import time
-import shap
-from sentence_transformers import SentenceTransformer
-from sklearn.linear_model import LinearRegression
-from sklearn.linear_model import Ridge
-from sklearn.metrics.pairwise import cosine_distances
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import LeaveOneOut, cross_val_predict
-from sklearn.metrics import mean_absolute_error, r2_score
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from pathlib import Path
+from collections import Counter
+
+from janome.tokenizer import Tokenizer
 from scipy.stats import spearmanr
+
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_distances
+
 import torch
-from xgboost import XGBRegressor
 from lexicalrichness import LexicalRichness
 from openai import OpenAI
-import json
+from statsmodels.stats.multitest import multipletests
 
 # ==========================
 # Configuration
@@ -40,17 +38,19 @@ model = SentenceTransformer(
 # number of features: 10-20
 
 def calc_corr(name, x):
-    # SRS-2
-    rho, p = spearmanr(x, demo_data["SRS2_total"])
-    print(f"\nCorrelation between {name} and SRS:")
-    print("rho =", rho)
-    print("p   =", p)
+    # SRS
+    rho_srs, p_srs = spearmanr(x, demo_data["SRS2_total"])
 
     # K6
-    rho, p = spearmanr(x, demo_data["K6_total"])
-    print(f"Correlation between {name} and K6:")
-    print("rho =", rho)
-    print("p   =", p)
+    rho_k6, p_k6 = spearmanr(x, demo_data["K6_total"])
+
+    results.append({
+        "Feature": name,
+        "SRS_rho": rho_srs,
+        "SRS_p": p_srs,
+        "K6_rho": rho_k6,
+        "K6_p": p_k6
+    })
 
 
 AGENDA_CACHE_FILE = "agenda_results.json"
@@ -80,8 +80,6 @@ def extract_agenda(patient_text):
 - future_anxiety: 将来への不安
 - self_evaluation: 自己評価・自信の低下
 - family: 家族関係
-- physical_health: 身体症状・健康不安
-- loneliness: 孤独感
 - anxiety: 不安全般
 - depression: 抑うつ的内容
 
@@ -155,7 +153,7 @@ plt.savefig("K6_SRS2_scatter.pdf", bbox_inches="tight")
 #plt.show()
 
 # Define the directory path and target extension
-dir_path = Path("data/diarizations/")
+dir_path = Path("data/diarizations_original/")
 extension = "*.txt"  # Change to your target extension (e.g., "*.csv", "*.json")
 
 
@@ -194,7 +192,7 @@ Agenda_family = []
 Agenda_anxiety = []
 Agenda_depression = []
 
-opposite_files = {3,6,8,10,12,18,25,30,31,32,42,44,46,50,52,57,62} # where the doctor is counted 1
+opposite_files = {6,8,10,12,18,25,30,31,32,42,44,46,50,52,57,62,107,113,140,144,158,194,210,212,228,245,261} # where the doctor is counted 1
 
 for file_path in sorted(dir_path.glob(extension), key=lambda p: int(p.stem)):
     if file_path.is_file():
@@ -235,7 +233,7 @@ for file_path in sorted(dir_path.glob(extension), key=lambda p: int(p.stem)):
                 if "Speaker 0" in line or "Speaker 1" in line:
                     speaker_id = int(line.split(":")[0].replace("Speaker ", ""))
                     result=line.split(":", 1)[1]
-                    result_space=result.replace(" ", "") # to eliminate spaces
+                    result_space = result.replace(" ", "").replace("　", "") # to eliminate spaces
                     
                     #act_words = [token.surface for token in t.tokenize(result_space)]
                     #print(result_space)
@@ -446,48 +444,123 @@ for file_path in sorted(dir_path.glob(extension), key=lambda p: int(p.stem)):
 # Statistical Analysis
 # ==========================
 
-# The frequency of words
-print("The frequency of words")
+results = []
 
-word_counts = Counter(words_spe0)
-with open("out_spe0_words_all.txt", "w", encoding="utf-8") as f:
-    for word, count in word_counts.most_common(100):
-        f.write(f"{word},{count}\n")
+def calc_corr(name, x):
+    # SRS-2
+    rho_srs, p_srs = spearmanr(
+        x,
+        demo_data["SRS2_total"]
+    )
 
-word_counts = Counter(words_spe1)
-with open("out_spe1_words_all.txt", "w", encoding="utf-8") as f:
-    for word, count in word_counts.most_common(100):
-        f.write(f"{word},{count}\n")
+    # K6
+    rho_k6, p_k6 = spearmanr(
+        x,
+        demo_data["K6_total"]
+    )
 
-print("# of file count:", file_count)
+    return {
+        "feature": name,
+        "rho_srs": rho_srs,
+        "p_srs": p_srs,
+        "rho_k6": rho_k6,
+        "p_k6": p_k6
+    }
 
 
-calc_corr("Jaccard", Jaccard_array)
-calc_corr("Cosine", Cosine_array)
-calc_corr("Bert", Bert_array)
-calc_corr("Bert_turn", Bert_turn)
-calc_corr("Bert_turn_max", Bert_turn_max)
-calc_corr("Bert_turn_min", Bert_turn_min)
-calc_corr("Bert_turn_std", Bert_turn_std)
-calc_corr("Word_count", Word_count)
-calc_corr("Word_count_doc", Word_count_doc)
-calc_corr("Word_count_ratio", Word_count_ratio)
-calc_corr("MTLD_patient", MTLD_patient)
-calc_corr("MTLD_doctor", MTLD_doctor)
-calc_corr("Mean_words_per_turn", Mean_words_per_turn)
-calc_corr("Agenda_social", Agenda_social)
-calc_corr("Agenda_work", Agenda_work)
-calc_corr("Agenda_future", Agenda_future)
-calc_corr("Agenda_self", Agenda_self)
-calc_corr("Agenda_family", Agenda_family)
-calc_corr("Agenda_anxiety", Agenda_anxiety)
-calc_corr("Agenda_depression", Agenda_depression)
+results.append(calc_corr("Jaccard", Jaccard_array))
+results.append(calc_corr("Cosine", Cosine_array))
+results.append(calc_corr("Bert", Bert_array))
+results.append(calc_corr("Bert_turn", Bert_turn))
+results.append(calc_corr("Bert_turn_max", Bert_turn_max))
+results.append(calc_corr("Bert_turn_min", Bert_turn_min))
+results.append(calc_corr("Bert_turn_std", Bert_turn_std))
+results.append(calc_corr("Word_count", Word_count))
+results.append(calc_corr("Word_count_doc", Word_count_doc))
+results.append(calc_corr("Word_count_ratio", Word_count_ratio))
+results.append(calc_corr("MTLD_patient", MTLD_patient))
+results.append(calc_corr("MTLD_doctor", MTLD_doctor))
+results.append(calc_corr("Mean_words_per_turn", Mean_words_per_turn))
+results.append(calc_corr("Agenda_social", Agenda_social))
+results.append(calc_corr("Agenda_work", Agenda_work))
+results.append(calc_corr("Agenda_future", Agenda_future))
+results.append(calc_corr("Agenda_self", Agenda_self))
+results.append(calc_corr("Agenda_family", Agenda_family))
+results.append(calc_corr("Agenda_anxiety", Agenda_anxiety))
+results.append(calc_corr("Agenda_depression", Agenda_depression))
+
+
+results_df = pd.DataFrame(results)
+
 
 # ==========================
-# Machine Learning
+# FDR correction
 # ==========================
 
-y = demo_data["SRS2_total"]
+# Benjamini-Hochberg FDR
+# SRS-2 and K6 are corrected separately
+
+reject_srs, p_fdr_srs, _, _ = multipletests(
+    results_df["p_srs"],
+    alpha=0.05,
+    method="fdr_bh"
+)
+
+results_df["p_fdr_srs"] = p_fdr_srs
+results_df["significant_fdr_srs"] = reject_srs
+
+
+reject_k6, p_fdr_k6, _, _ = multipletests(
+    results_df["p_k6"],
+    alpha=0.05,
+    method="fdr_bh"
+)
+
+results_df["p_fdr_k6"] = p_fdr_k6
+results_df["significant_fdr_k6"] = reject_k6
+
+
+# ==========================
+# Print results
+# ==========================
+
+print("\n===== SRS-2: FDR corrected =====")
+
+print(
+    results_df[
+        [
+            "feature",
+            "rho_srs",
+            "p_srs",
+            "p_fdr_srs",
+            "significant_fdr_srs"
+        ]
+    ].sort_values("p_srs")
+)
+
+
+print("\n===== K6: FDR corrected =====")
+
+print(
+    results_df[
+        [
+            "feature",
+            "rho_k6",
+            "p_k6",
+            "p_fdr_k6",
+            "significant_fdr_k6"
+        ]
+    ].sort_values("p_k6")
+)
+
+
+# Save
+results_df.to_csv(
+    "correlation_results_FDR.csv",
+    index=False,
+    encoding="utf-8-sig"
+)
+
 
 X = pd.DataFrame({
     "Jaccard": Jaccard_array,
@@ -512,121 +585,17 @@ X = pd.DataFrame({
     "Agenda_depression": Agenda_depression
 })
 
-X_agenda = X.filter(regex="^Agenda_")
 
-X_compare = X.drop(columns=[
-    "Agenda_social",
-    "Agenda_work",
-    "Agenda_future",
-    "Agenda_self",
-    "Agenda_family",
-    "Agenda_anxiety",
-    "Agenda_depression"
-])
-
-
-# random forest
-
-rf = RandomForestRegressor(
-    n_estimators=1000,
-    random_state=42
+X.to_csv(
+    "nlp_features.csv",
+    index=False,
+    encoding="utf-8-sig"
 )
 
-# linear regression
-
-lr = LinearRegression()
-
-
-# Ridge regression
-ridge = Ridge(alpha=0.1) #alpha value could be changed
-
-# XGBoost
-xgb = XGBRegressor(
-    n_estimators=300,
-    learning_rate=0.05,
-    max_depth=3,
-    random_state=42,
-    objective="reg:squarederror"
+demo_data[
+    ["ID", "SRS2_total", "K6_total"]
+].to_csv(
+    "outcomes.csv",
+    index=False,
+    encoding="utf-8-sig"
 )
-
-
-# cross validation
-
-loo = LeaveOneOut()
-
-pred = cross_val_predict(
-    xgb, # to be changed
-    X, # to be changed
-    y,
-    cv=loo
-)
-
-# ---- Train final model for interpretation ----
-xgb.fit(X, y)
-
-# SHAP
-explainer = shap.TreeExplainer(xgb)
-
-shap_values = explainer.shap_values(X)
-
-shap.summary_plot(
-    shap_values,
-    X,
-    show=False
-)
-
-plt.tight_layout()
-plt.savefig(
-    "shap_summary_plot.pdf",
-    bbox_inches="tight"
-)
-
-plt.close()
-
-# importance
-
-rf.fit(X, y)
-
-importance = pd.Series(
-    rf.feature_importances_,
-    index=X.columns
-)
-
-print(importance.sort_values(ascending=False))
-
-
-rho, p = spearmanr(y, pred)
-
-print("##Prediction##")
-print("Spearman rho =", rho)
-print("p =", p)
-
-print("MAE =", mean_absolute_error(y, pred))
-print("R2 =", r2_score(y, pred))
-
-
-
-
-# ==========================
-# Visualization
-# ==========================
-
-plt.figure(figsize=(5,5))
-plt.scatter(y, pred,s=50, color="black", alpha=0.7)
-
-plt.xlabel("True SRS")
-plt.ylabel("Predicted SRS")
-
-plt.xlim(0, 150)
-plt.ylim(0, 150)
-
-plt.tight_layout()
-plt.savefig("SRS2_prediction_scatter.pdf", bbox_inches="tight")
-#plt.show()
-
-
-
-# end
-
-end = time.perf_counter()
-print(f"Time elapsed: {end - start:.5f} seconds")
