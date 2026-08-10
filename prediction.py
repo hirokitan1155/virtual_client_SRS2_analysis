@@ -320,7 +320,6 @@ plt.errorbar(
     capsize=3
 )
 
-# Zero reference line
 plt.axvline(
     0,
     linestyle="--",
@@ -329,17 +328,20 @@ plt.axvline(
 
 plt.yticks(
     y_pos,
-    coef_summary["Feature"]
+    coef_summary["Feature"],
+    fontsize=13
 )
+
+plt.xticks(fontsize=13)
 
 plt.xlabel(
-    "Standardized Elastic Net coefficient"
+    "Standardized Elastic Net coefficient",
+    fontsize=15
 )
 
-plt.ylabel("Feature")
-
-plt.title(
-    "Elastic Net coefficients for K6 prediction"
+plt.ylabel(
+    "Feature",
+    fontsize=15
 )
 
 plt.tight_layout()
@@ -350,7 +352,6 @@ plt.savefig(
 )
 
 plt.close()
-
 
 # ==========================
 # Fit final Elastic Net
@@ -536,3 +537,4 @@ feature_set_results_df.to_csv(
     index=False,
     encoding="utf-8-sig"
 )
+
